@@ -31,7 +31,8 @@ class SimklPlugin extends Plugin {
       showProgress: true,
       showGenres: true,
       clientId: '', // Users need to set this
-      accessToken: '' // For authenticated requests
+      accessToken: '', // For authenticated requests
+      userId: '' // User's Simkl ID
     }, await this.loadData());
   }
 
@@ -60,14 +61,16 @@ class SimklPlugin extends Plugin {
       }
     }
     
-    if (!config.username) {
-      throw new Error('Username is required');
+    // Use userId from config or fallback to settings
+    if (!config.userId && !this.settings.userId) {
+      throw new Error('User ID is required. Please set it in plugin settings or specify userId in the code block.');
     }
     
     if (!this.settings.clientId) {
       throw new Error('Client ID not configured. Please set it in plugin settings.');
     }
     
+    config.userId = config.userId || this.settings.userId;
     config.listType = config.listType || 'watching';
     config.layout = config.layout || this.settings.defaultLayout;
     config.mediaType = config.mediaType || 'tv'; // tv, anime, movies
@@ -96,15 +99,15 @@ class SimklPlugin extends Plugin {
   }
 
   parseInlineLink(href) {
-    // Parse: simkl:username/tv/watching or simkl:username/stats
+    // Parse: simkl:userId/tv/watching or simkl:userId/stats
     const parts = href.replace('simkl:', '').split('/');
     
     if (parts.length < 2) {
-      throw new Error('Invalid Simkl link format');
+      throw new Error('Invalid Simkl link format. Use: simkl:userId/stats or simkl:userId/tv/watching');
     }
     
     const config = {
-      username: parts[0],
+      userId: parts[0],
       layout: 'card'
     };
     
@@ -137,16 +140,27 @@ class SimklPlugin extends Plugin {
     };
     
     if (config.type === 'stats') {
-      // User stats endpoint - public endpoint
-      url = `https://api.simkl.com/users/${config.username}/stats?client_id=${this.settings.clientId}`;
+      // User stats endpoint - public endpoint using user ID
+      url = `https://api.simkl.com/users/${config.userId}/stats?client_id=${this.settings.clientId}`;
     } else {
-      // User's watchlist endpoint - requires authentication
+      // For user watchlist, we need to use the sync endpoint with authentication
       if (!this.settings.accessToken) {
         throw new Error('Access token required for user watchlist. Please authenticate with Simkl first.');
       }
       
       headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
-      url = `https://api.simkl.com/sync/all-items/${config.mediaType}/${config.listType}?extended=full`;
+      
+      // Use the correct sync endpoint for getting user's lists
+      const listMap = {
+        'watching': 'watching',
+        'completed': 'completed',
+        'plantowatch': 'plantowatch',
+        'hold': 'hold',
+        'dropped': 'dropped'
+      };
+      
+      const status = listMap[config.listType] || 'watching';
+      url = `https://api.simkl.com/sync/all-items/${config.mediaType}/${status}?extended=full`;
     }
     
     try {
@@ -158,10 +172,18 @@ class SimklPlugin extends Plugin {
       if (!response.ok) {
         let errorMessage = `HTTP ${response.status}`;
         try {
-          const errorText = await response.text();
-          errorMessage += ` - ${errorText}`;
+          const errorData = await response.json();
+          if (errorData.error) {
+            errorMessage += ` - ${errorData.error}`;
+          }
         } catch (e) {
-          // If we can't read the error text, just use the status
+          // If we can't parse JSON, try text
+          try {
+            const errorText = await response.text();
+            errorMessage += ` - ${errorText}`;
+          } catch (e2) {
+            // If we can't read anything, just use the status
+          }
         }
         throw new Error(`Simkl API Error: ${errorMessage}`);
       }
@@ -176,7 +198,7 @@ class SimklPlugin extends Plugin {
       return result;
     } catch (error) {
       console.error('Simkl API Error:', error);
-      if (error.message.includes('Failed to fetch')) {
+      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
         throw new Error('Network error: Please check your internet connection');
       }
       throw new Error(`Failed to fetch data from Simkl: ${error.message}`);
@@ -185,6 +207,7 @@ class SimklPlugin extends Plugin {
 
   // Helper function to generate Simkl URL
   getSimklUrl(mediaType, id) {
+    if (!id) return '#';
     return `https://simkl.com/${mediaType}/${id}`;
   }
 
@@ -203,11 +226,11 @@ class SimklPlugin extends Plugin {
     const statsHtml = `
       <div class="simkl-user-stats">
         <div class="user-header">
-          <h3>Simkl Statistics</h3>
+          <h3>📊 Simkl Statistics</h3>
         </div>
         <div class="stats-grid">
           <div class="stat-section">
-            <h4>TV Shows</h4>
+            <h4>📺 TV Shows</h4>
             <div class="stat-item">
               <span>Shows:</span>
               <span>${stats.tv?.shows || 0}</span>
@@ -222,7 +245,7 @@ class SimklPlugin extends Plugin {
             </div>
           </div>
           <div class="stat-section">
-            <h4>Anime</h4>
+            <h4>🎌 Anime</h4>
             <div class="stat-item">
               <span>Shows:</span>
               <span>${stats.anime?.shows || 0}</span>
@@ -237,7 +260,7 @@ class SimklPlugin extends Plugin {
             </div>
           </div>
           <div class="stat-section">
-            <h4>Movies</h4>
+            <h4>🎬 Movies</h4>
             <div class="stat-item">
               <span>Count:</span>
               <span>${stats.movies?.movies || 0}</span>
@@ -285,6 +308,9 @@ class SimklPlugin extends Plugin {
         img.src = show.poster;
         img.alt = title;
         img.className = 'media-cover';
+        img.onerror = function() {
+          this.style.display = 'none';
+        };
         cardDiv.appendChild(img);
       }
       
@@ -330,7 +356,7 @@ class SimklPlugin extends Plugin {
       mediaInfoDiv.appendChild(detailsDiv);
       
       // Create genres div
-      if (this.settings.showGenres && show.genres) {
+      if (this.settings.showGenres && show.genres && show.genres.length > 0) {
         const genresDiv = document.createElement('div');
         genresDiv.className = 'genres';
         show.genres.slice(0, 3).forEach(genre => {
@@ -430,7 +456,7 @@ class SimklPlugin extends Plugin {
   }
 
   renderError(el, message) {
-    el.innerHTML = `<div class="simkl-error">Error: ${message}</div>`;
+    el.innerHTML = `<div class="simkl-error">❌ Error: ${message}</div>`;
   }
 
   onunload() {
@@ -450,13 +476,20 @@ class SimklSettingTab extends PluginSettingTab {
     
     containerEl.createEl('h2', { text: 'Simkl Integration Settings' });
     
-    containerEl.createEl('p', { 
-      text: 'To use this plugin, you need to get a Client ID from Simkl. Go to https://simkl.com/settings/developer and create a new app to get your Client ID.'
-    });
+    // Instructions section
+    const instructionsDiv = containerEl.createEl('div', { cls: 'setting-item-description' });
+    instructionsDiv.createEl('h3', { text: 'Setup Instructions:' });
+    instructionsDiv.createEl('p', { text: '1. Go to https://simkl.com/settings/developer and create a new app to get your Client ID.' });
+    instructionsDiv.createEl('p', { text: '2. Find your User ID by going to your Simkl profile. It\'s the number in the URL.' });
+    instructionsDiv.createEl('p', { text: '3. For watchlists, you\'ll need an access token. User stats work with just Client ID.' });
     
-    containerEl.createEl('p', { 
-      text: 'Note: For user watchlists, you also need an access token. User stats work with just the Client ID.'
-    });
+    // Usage examples
+    const examplesDiv = containerEl.createEl('div', { cls: 'setting-item-description' });
+    examplesDiv.createEl('h3', { text: 'Usage Examples:' });
+    examplesDiv.createEl('p', { text: 'Code blocks:' });
+    examplesDiv.createEl('pre', { text: '```simkl\nuserId: 123456\nmediaType: tv\nlistType: watching\nlayout: card\n```' });
+    examplesDiv.createEl('p', { text: 'Inline links:' });
+    examplesDiv.createEl('pre', { text: '[My Stats](simkl:123456/stats)\n[Currently Watching](simkl:123456/tv/watching)' });
     
     new Setting(containerEl)
       .setName('Client ID')
@@ -466,6 +499,17 @@ class SimklSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.clientId)
         .onChange(async (value) => {
           this.plugin.settings.clientId = value;
+          await this.plugin.saveSettings();
+        }));
+    
+    new Setting(containerEl)
+      .setName('User ID')
+      .setDesc('Your Simkl User ID (find it in your profile URL)')
+      .addText(text => text
+        .setPlaceholder('Enter your Simkl User ID')
+        .setValue(this.plugin.settings.userId)
+        .onChange(async (value) => {
+          this.plugin.settings.userId = value;
           await this.plugin.saveSettings();
         }));
     
@@ -526,7 +570,7 @@ class SimklSettingTab extends PluginSettingTab {
       .setName('Show Genres')
       .setDesc('Display genre tags')
       .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.showGenres)
+        .setValue(this.settings.showGenres)
         .onChange(async (value) => {
           this.plugin.settings.showGenres = value;
           await this.plugin.saveSettings();
