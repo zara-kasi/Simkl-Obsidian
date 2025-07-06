@@ -198,14 +198,19 @@ class SimklPlugin extends Plugin {
       
       try {
         const data = await this.makeSimklRequest(config);
+        
+        // Filter sync data for authenticated requests
+        const filteredData = this.settings.accessToken && config.type !== 'stats' ? 
+          this.filterSyncData(data, config) : data;
+        
         const cacheKey = JSON.stringify(config);
         
         this.cache.set(cacheKey, {
-          data: data,
+          data: filteredData,
           timestamp: Date.now()
         });
         
-        resolve(data);
+        resolve(filteredData);
       } catch (error) {
         reject(error);
       }
@@ -217,32 +222,57 @@ class SimklPlugin extends Plugin {
     this.isProcessingQueue = false;
   }
 
+  // Filter sync data by list type and media type
+  filterSyncData(data, config) {
+    if (!data || !Array.isArray(data)) return data;
+    
+    // Map list types to sync status values
+    const statusMap = {
+      'watching': 'watching',
+      'plantowatch': 'plantowatch',
+      'hold': 'hold',
+      'completed': 'completed',
+      'dropped': 'dropped'
+    };
+    
+    const targetStatus = statusMap[config.listType] || config.listType;
+    
+    // Filter data by status and media type
+    return data.filter(item => {
+      const matchesStatus = item.status === targetStatus;
+      const matchesType = config.mediaType === 'tv' ? item.show : item.movie;
+      return matchesStatus && matchesType;
+    });
+  }
+
   async makeSimklRequest(config) {
     let url;
     let headers = {
-      'simkl-api-version': '1',
+      'simkl-api-key': this.settings.clientId,  // REQUIRED - was missing!
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     };
-    
+
     if (config.type === 'stats') {
-      url = `https://api.simkl.com/users/${config.userId}/stats?client_id=${this.settings.clientId}`;
+      // Stats endpoint
+      url = `https://api.simkl.com/users/${config.userId}/stats`;
     } else {
       // Always try authenticated endpoint first if we have a token
       if (this.settings.accessToken) {
         headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
-        url = `https://api.simkl.com/sync/all-items/${config.mediaType}/${config.listType}?extended=full`;
+        // Corrected sync endpoint structure
+        url = `https://api.simkl.com/sync/all-items?extended=full`;
       } else {
-        // Try public endpoint
-        url = `https://api.simkl.com/users/${config.userId}/list/${config.mediaType}/${config.listType}?client_id=${this.settings.clientId}&extended=full`;
+        // Public endpoint
+        url = `https://api.simkl.com/users/${config.userId}/list/${config.mediaType}/${config.listType}?extended=full`;
       }
     }
-    
+
     if (this.settings.debugMode) {
       console.log('Making request to:', url);
       console.log('Headers:', headers);
     }
-    
+
     let lastError;
     
     // Retry mechanism
@@ -264,7 +294,9 @@ class SimklPlugin extends Plugin {
         if (response.status === 401) {
           throw new Error('Authentication failed. Please check your access token.');
         } else if (response.status === 403) {
-          throw new Error('Access forbidden. The user profile might be private.');
+          throw new Error('Access forbidden. Check your API key or user permissions.');
+        } else if (response.status === 412) {
+          throw new Error('Client ID failed - check your simkl-api-key header.');
         } else if (response.status === 404) {
           throw new Error('User not found or list is empty.');
         } else if (response.status === 429) {
@@ -315,6 +347,7 @@ class SimklPlugin extends Plugin {
         // Don't retry for authentication or client errors
         if (error.message.includes('Authentication failed') || 
             error.message.includes('Access forbidden') ||
+            error.message.includes('Client ID failed') ||
             error.message.includes('User not found')) {
           throw error;
         }
@@ -367,6 +400,21 @@ class SimklPlugin extends Plugin {
     } else {
       this.renderMediaList(el, data, config);
     }
+    
+    // Add required Simkl attribution link (required by API terms)
+    const attributionDiv = document.createElement('div');
+    attributionDiv.className = 'simkl-attribution';
+    attributionDiv.style.cssText = 'margin-top: 10px; text-align: center; font-size: 0.8em; opacity: 0.7;';
+    
+    const simklLink = document.createElement('a');
+    simklLink.href = 'https://simkl.com';
+    simklLink.textContent = 'Powered by Simkl';
+    simklLink.target = '_blank';
+    simklLink.rel = 'noopener noreferrer';
+    simklLink.style.cssText = 'color: inherit; text-decoration: none;';
+    
+    attributionDiv.appendChild(simklLink);
+    el.appendChild(attributionDiv);
   }
 
   renderUserStats(el, stats) {
@@ -575,7 +623,6 @@ class SimklPlugin extends Plugin {
       if (!show) return;
       
       const row = document.createElement('tr');
-      
       // Title
       const titleCell = document.createElement('td');
       const titleLink = document.createElement('a');
@@ -600,7 +647,7 @@ class SimklPlugin extends Plugin {
         row.appendChild(progressCell);
       }
       
-    // Rating
+      // Rating
       if (this.settings.showRatings) {
         const scoreCell = document.createElement('td');
         scoreCell.textContent = entry.user_rating ? `★ ${entry.user_rating}` : '-';
@@ -813,6 +860,7 @@ layout: card
             new Notice(`Connection failed: ${error.message}`);
             button.setButtonText('Test API');
           }
+     
         }));
   }
 
