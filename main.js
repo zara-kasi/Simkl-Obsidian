@@ -5,6 +5,8 @@ class SimklPlugin extends Plugin {
     super(...arguments);
     this.cache = new Map();
     this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
+    this.requestQueue = [];
+    this.isProcessingQueue = false;
   }
 
   async onload() {
@@ -21,6 +23,10 @@ class SimklPlugin extends Plugin {
     
     // Add plugin settings
     this.addSettingTab(new SimklSettingTab(this.app, this));
+    
+    // Add status bar for debugging
+    this.statusBarItem = this.addStatusBarItem();
+    this.statusBarItem.setText('Simkl: Ready');
   }
 
   async loadSettings() {
@@ -30,9 +36,12 @@ class SimklPlugin extends Plugin {
       showRatings: true,
       showProgress: true,
       showGenres: true,
-      clientId: '', // Users need to set this
-      accessToken: '', // For authenticated requests
-      userId: '' // Simkl user ID (not username)
+      clientId: '',
+      accessToken: '',
+      userId: '',
+      debugMode: false,
+      requestTimeout: 15000, // 15 seconds for mobile
+      maxRetries: 3
     }, await this.loadData());
   }
 
@@ -42,12 +51,25 @@ class SimklPlugin extends Plugin {
 
   async processSimklCodeBlock(source, el, ctx) {
     try {
+      this.statusBarItem.setText('Simkl: Processing...');
       const config = this.parseCodeBlockConfig(source);
+      
+      if (this.settings.debugMode) {
+        console.log('Simkl Config:', config);
+      }
+      
       const data = await this.fetchSimklData(config);
       this.renderSimklData(el, data, config);
+      this.statusBarItem.setText('Simkl: Ready');
     } catch (error) {
       console.error('Simkl Plugin Error:', error);
+      this.statusBarItem.setText('Simkl: Error');
       this.renderError(el, error.message);
+      
+      // Show notice for debugging
+      if (this.settings.debugMode) {
+        new Notice(`Simkl Error: ${error.message}`);
+      }
     }
   }
 
@@ -56,27 +78,32 @@ class SimklPlugin extends Plugin {
     const lines = source.split('\n').filter(line => line.trim());
     
     for (const line of lines) {
-      const [key, value] = line.split(':').map(s => s.trim());
+      const colonIndex = line.indexOf(':');
+      if (colonIndex === -1) continue;
+      
+      const key = line.substring(0, colonIndex).trim();
+      const value = line.substring(colonIndex + 1).trim();
+      
       if (key && value) {
         config[key] = value;
       }
     }
     
-    // Use userId from settings if not provided, or from config
+    // Set defaults
     config.userId = config.userId || config.username || this.settings.userId;
+    config.listType = config.listType || 'watching';
+    config.layout = config.layout || this.settings.defaultLayout;
+    config.mediaType = config.mediaType || 'tv';
+    config.type = config.type || 'list';
     
-    if (!config.userId) {
+    // Validation
+    if (!config.userId && config.type !== 'stats') {
       throw new Error('User ID is required. Please set it in plugin settings or specify userId in the code block.');
     }
     
     if (!this.settings.clientId) {
       throw new Error('Client ID not configured. Please set it in plugin settings.');
     }
-    
-    config.listType = config.listType || 'watching';
-    config.layout = config.layout || this.settings.defaultLayout;
-    config.mediaType = config.mediaType || 'tv'; // tv, anime, movies
-    config.type = config.type || 'list'; // list, stats
     
     return config;
   }
@@ -103,35 +130,28 @@ class SimklPlugin extends Plugin {
   }
 
   parseInlineLink(href) {
-    // Parse: simkl:userId/tv/watching or simkl:userId/stats or simkl:stats (use default user)
     const parts = href.replace('simkl:', '').split('/');
     
     if (parts.length < 1) {
       throw new Error('Invalid Simkl link format');
     }
     
-    const config = {
-      layout: 'card'
-    };
+    const config = { layout: 'card' };
     
-    // Handle different formats
     if (parts[0] === 'stats') {
-      // simkl:stats - use default user
       config.userId = this.settings.userId;
       config.type = 'stats';
     } else if (parts.length === 1) {
-      // simkl:userId - default to watching TV shows
       config.userId = parts[0];
       config.mediaType = 'tv';
       config.listType = 'watching';
       config.type = 'list';
     } else {
-      // simkl:userId/tv/watching or simkl:userId/stats
       config.userId = parts[0];
       if (parts[1] === 'stats') {
         config.type = 'stats';
       } else {
-        config.mediaType = parts[1]; // tv, anime, movies
+        config.mediaType = parts[1];
         config.listType = parts[2] || 'watching';
         config.type = 'list';
       }
@@ -149,6 +169,9 @@ class SimklPlugin extends Plugin {
     const cached = this.cache.get(cacheKey);
     
     if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
+      if (this.settings.debugMode) {
+        console.log('Using cached data for:', cacheKey);
+      }
       return cached.data;
     }
     
@@ -156,101 +179,180 @@ class SimklPlugin extends Plugin {
       throw new Error('Client ID not configured. Please set it in plugin settings.');
     }
     
+    // Queue requests to avoid overwhelming the API
+    return new Promise((resolve, reject) => {
+      this.requestQueue.push({ config, resolve, reject });
+      this.processRequestQueue();
+    });
+  }
+
+  async processRequestQueue() {
+    if (this.isProcessingQueue || this.requestQueue.length === 0) {
+      return;
+    }
+    
+    this.isProcessingQueue = true;
+    
+    while (this.requestQueue.length > 0) {
+      const { config, resolve, reject } = this.requestQueue.shift();
+      
+      try {
+        const data = await this.makeSimklRequest(config);
+        const cacheKey = JSON.stringify(config);
+        
+        this.cache.set(cacheKey, {
+          data: data,
+          timestamp: Date.now()
+        });
+        
+        resolve(data);
+      } catch (error) {
+        reject(error);
+      }
+      
+      // Add delay between requests to be respectful to the API
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    
+    this.isProcessingQueue = false;
+  }
+
+  async makeSimklRequest(config) {
     let url;
-    const headers = {
+    let headers = {
       'simkl-api-version': '1',
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
     };
     
     if (config.type === 'stats') {
-      // User stats endpoint - public endpoint
       url = `https://api.simkl.com/users/${config.userId}/stats?client_id=${this.settings.clientId}`;
     } else {
-      // User's watchlist endpoint - check if it's for the authenticated user
-      if (config.userId === this.settings.userId && this.settings.accessToken) {
-        // Use authenticated endpoint for own data
+      // Always try authenticated endpoint first if we have a token
+      if (this.settings.accessToken) {
         headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
         url = `https://api.simkl.com/sync/all-items/${config.mediaType}/${config.listType}?extended=full`;
       } else {
-        // Try public endpoint first (may not work for all users)
+        // Try public endpoint
         url = `https://api.simkl.com/users/${config.userId}/list/${config.mediaType}/${config.listType}?client_id=${this.settings.clientId}&extended=full`;
       }
     }
     
-    try {
-      const response = await this.makeRequest(url, headers);
-      
-      if (!response.ok) {
-        // If public endpoint fails and we have auth, try authenticated endpoint
-        if (response.status === 401 && this.settings.accessToken && config.type !== 'stats') {
-          headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
-          const authUrl = `https://api.simkl.com/sync/all-items/${config.mediaType}/${config.listType}?extended=full`;
-          const authResponse = await this.makeRequest(authUrl, headers);
+    if (this.settings.debugMode) {
+      console.log('Making request to:', url);
+      console.log('Headers:', headers);
+    }
+    
+    let lastError;
+    
+    // Retry mechanism
+    for (let attempt = 1; attempt <= this.settings.maxRetries; attempt++) {
+      try {
+        const response = await this.makeHttpRequest(url, headers);
+        
+        if (response.ok) {
+          const data = await response.json();
           
-          if (!authResponse.ok) {
-            throw new Error(`Simkl API Error: ${authResponse.status} - ${await authResponse.text()}`);
+          if (this.settings.debugMode) {
+            console.log('Received data:', data);
           }
           
-          const result = await authResponse.json();
-          this.cache.set(cacheKey, {
-            data: result,
-            timestamp: Date.now()
-          });
-          return result;
+          return data;
+        }
+        
+        // Handle specific error codes
+        if (response.status === 401) {
+          throw new Error('Authentication failed. Please check your access token.');
+        } else if (response.status === 403) {
+          throw new Error('Access forbidden. The user profile might be private.');
+        } else if (response.status === 404) {
+          throw new Error('User not found or list is empty.');
+        } else if (response.status === 429) {
+          // Rate limited - wait and retry
+          if (attempt < this.settings.maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+            continue;
+          }
+          throw new Error('Too many requests. Please try again later.');
+        } else if (response.status >= 500) {
+          // Server error - retry
+          if (attempt < this.settings.maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            continue;
+          }
+          throw new Error('Simkl server error. Please try again later.');
         }
         
         let errorMessage = `HTTP ${response.status}`;
         try {
-          const errorText = await response.text();
-          if (errorText) {
-            errorMessage += ` - ${errorText}`;
+          const errorData = await response.json();
+          if (errorData.error) {
+            errorMessage += ` - ${errorData.error}`;
           }
         } catch (e) {
-          // If we can't read the error text, just use the status
+          // Can't parse error response
         }
+        
         throw new Error(`Simkl API Error: ${errorMessage}`);
+        
+      } catch (error) {
+        lastError = error;
+        
+        if (error.name === 'AbortError') {
+          throw new Error('Request timed out. Please check your internet connection.');
+        }
+        
+        if (error.message.includes('Failed to fetch') || 
+            error.message.includes('Network request failed') ||
+            error.message.includes('NetworkError')) {
+          if (attempt < this.settings.maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            continue;
+          }
+          throw new Error('Network error. Please check your internet connection and try again.');
+        }
+        
+        // Don't retry for authentication or client errors
+        if (error.message.includes('Authentication failed') || 
+            error.message.includes('Access forbidden') ||
+            error.message.includes('User not found')) {
+          throw error;
+        }
+        
+        // Retry for other errors
+        if (attempt < this.settings.maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          continue;
+        }
       }
-      
-      const result = await response.json();
-      
-      this.cache.set(cacheKey, {
-        data: result,
-        timestamp: Date.now()
-      });
-      
-      return result;
-    } catch (error) {
-      console.error('Simkl API Error:', error);
-      if (error.message.includes('Failed to fetch') || error.message.includes('Network request failed')) {
-        throw new Error('Network error: Please check your internet connection');
-      }
-      throw new Error(`Failed to fetch data from Simkl: ${error.message}`);
     }
+    
+    throw lastError || new Error('Failed to fetch data from Simkl after multiple attempts');
   }
 
-  // Helper method to handle network requests with better error handling
-  async makeRequest(url, headers) {
+  async makeHttpRequest(url, headers) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), this.settings.requestTimeout);
     
     try {
       const response = await fetch(url, {
         method: 'GET',
         headers: headers,
-        signal: controller.signal
+        signal: controller.signal,
+        // Add mobile-specific options
+        cache: 'no-cache',
+        credentials: 'omit',
+        mode: 'cors'
       });
+      
       clearTimeout(timeoutId);
       return response;
     } catch (error) {
       clearTimeout(timeoutId);
-      if (error.name === 'AbortError') {
-        throw new Error('Request timed out');
-      }
       throw error;
     }
   }
 
-  // Helper function to generate Simkl URL
   getSimklUrl(mediaType, id) {
     if (!id) return '#';
     return `https://simkl.com/${mediaType}/${id}`;
@@ -268,63 +370,84 @@ class SimklPlugin extends Plugin {
   }
 
   renderUserStats(el, stats) {
-    const statsHtml = `
-      <div class="simkl-user-stats">
-        <div class="user-header">
-          <h3>Simkl Statistics</h3>
-        </div>
-        <div class="stats-grid">
-          <div class="stat-section">
-            <h4>TV Shows</h4>
-            <div class="stat-item">
-              <span>Shows:</span>
-              <span>${stats.tv?.shows || 0}</span>
-            </div>
-            <div class="stat-item">
-              <span>Episodes:</span>
-              <span>${stats.tv?.episodes || 0}</span>
-            </div>
-            <div class="stat-item">
-              <span>Minutes:</span>
-              <span>${(stats.tv?.minutes || 0).toLocaleString()}</span>
-            </div>
-          </div>
-          <div class="stat-section">
-            <h4>Anime</h4>
-            <div class="stat-item">
-              <span>Shows:</span>
-              <span>${stats.anime?.shows || 0}</span>
-            </div>
-            <div class="stat-item">
-              <span>Episodes:</span>
-              <span>${stats.anime?.episodes || 0}</span>
-            </div>
-            <div class="stat-item">
-              <span>Minutes:</span>
-              <span>${(stats.anime?.minutes || 0).toLocaleString()}</span>
-            </div>
-          </div>
-          <div class="stat-section">
-            <h4>Movies</h4>
-            <div class="stat-item">
-              <span>Count:</span>
-              <span>${stats.movies?.movies || 0}</span>
-            </div>
-            <div class="stat-item">
-              <span>Minutes:</span>
-              <span>${(stats.movies?.minutes || 0).toLocaleString()}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
+    const statsDiv = document.createElement('div');
+    statsDiv.className = 'simkl-user-stats';
     
-    el.innerHTML = statsHtml;
+    const headerDiv = document.createElement('div');
+    headerDiv.className = 'user-header';
+    const header = document.createElement('h3');
+    header.textContent = 'Simkl Statistics';
+    headerDiv.appendChild(header);
+    statsDiv.appendChild(headerDiv);
+    
+    const gridDiv = document.createElement('div');
+    gridDiv.className = 'stats-grid';
+    
+    // TV Stats
+    if (stats.tv) {
+      const tvSection = this.createStatSection('TV Shows', [
+        { label: 'Shows', value: stats.tv.shows || 0 },
+        { label: 'Episodes', value: stats.tv.episodes || 0 },
+        { label: 'Minutes', value: (stats.tv.minutes || 0).toLocaleString() }
+      ]);
+      gridDiv.appendChild(tvSection);
+    }
+    
+    // Anime Stats
+    if (stats.anime) {
+      const animeSection = this.createStatSection('Anime', [
+        { label: 'Shows', value: stats.anime.shows || 0 },
+        { label: 'Episodes', value: stats.anime.episodes || 0 },
+        { label: 'Minutes', value: (stats.anime.minutes || 0).toLocaleString() }
+      ]);
+      gridDiv.appendChild(animeSection);
+    }
+    
+    // Movie Stats
+    if (stats.movies) {
+      const moviesSection = this.createStatSection('Movies', [
+        { label: 'Count', value: stats.movies.movies || 0 },
+        { label: 'Minutes', value: (stats.movies.minutes || 0).toLocaleString() }
+      ]);
+      gridDiv.appendChild(moviesSection);
+    }
+    
+    statsDiv.appendChild(gridDiv);
+    el.appendChild(statsDiv);
+  }
+
+  createStatSection(title, stats) {
+    const section = document.createElement('div');
+    section.className = 'stat-section';
+    
+    const titleEl = document.createElement('h4');
+    titleEl.textContent = title;
+    section.appendChild(titleEl);
+    
+    stats.forEach(stat => {
+      const item = document.createElement('div');
+      item.className = 'stat-item';
+      
+      const label = document.createElement('span');
+      label.textContent = stat.label + ':';
+      item.appendChild(label);
+      
+      const value = document.createElement('span');
+      value.textContent = stat.value;
+      item.appendChild(value);
+      
+      section.appendChild(item);
+    });
+    
+    return section;
   }
 
   renderMediaList(el, entries, config) {
     if (!entries || entries.length === 0) {
-      el.innerHTML = '<div class="simkl-empty">No items found</div>';
+      const emptyDiv = document.createElement('div');
+      emptyDiv.className = 'simkl-empty';
+      emptyDiv.textContent = 'No items found';
+      el.appendChild(emptyDiv);
       return;
     }
     
@@ -343,35 +466,40 @@ class SimklPlugin extends Plugin {
       const show = entry.show || entry.movie;
       if (!show) return;
       
-      const title = show.title;
-      
       const cardDiv = document.createElement('div');
       cardDiv.className = 'simkl-card';
       
+      // Cover image
       if (this.settings.showCoverImages && show.poster) {
         const img = document.createElement('img');
         img.src = show.poster;
-        img.alt = title;
+        img.alt = show.title;
         img.className = 'media-cover';
         img.loading = 'lazy';
+        
+        // Add error handling for images
+        img.onerror = function() {
+          this.style.display = 'none';
+        };
+        
         cardDiv.appendChild(img);
       }
       
       const mediaInfoDiv = document.createElement('div');
       mediaInfoDiv.className = 'media-info';
       
-      // Create clickable title
-      const titleElement = document.createElement('h4');
+      // Title
+      const titleEl = document.createElement('h4');
       const titleLink = document.createElement('a');
       titleLink.href = this.getSimklUrl(config.mediaType, show.ids?.simkl);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'simkl-title-link';
-      titleLink.textContent = title;
-      titleElement.appendChild(titleLink);
-      mediaInfoDiv.appendChild(titleElement);
+      titleLink.textContent = show.title;
+      titleEl.appendChild(titleLink);
+      mediaInfoDiv.appendChild(titleEl);
       
-      // Create details div
+      // Details
       const detailsDiv = document.createElement('div');
       detailsDiv.className = 'media-details';
       
@@ -398,8 +526,8 @@ class SimklPlugin extends Plugin {
       
       mediaInfoDiv.appendChild(detailsDiv);
       
-      // Create genres div
-      if (this.settings.showGenres && show.genres) {
+      // Genres
+      if (this.settings.showGenres && show.genres && show.genres.length > 0) {
         const genresDiv = document.createElement('div');
         genresDiv.className = 'genres';
         show.genres.slice(0, 3).forEach(genre => {
@@ -422,61 +550,49 @@ class SimklPlugin extends Plugin {
     const table = document.createElement('table');
     table.className = 'simkl-table';
     
-    // Create header
+    // Header
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
     
-    const titleHeader = document.createElement('th');
-    titleHeader.textContent = 'Title';
-    headerRow.appendChild(titleHeader);
+    const headers = ['Title', 'Year'];
+    if (this.settings.showProgress) headers.push('Progress');
+    if (this.settings.showRatings) headers.push('Rating');
     
-    const yearHeader = document.createElement('th');
-    yearHeader.textContent = 'Year';
-    headerRow.appendChild(yearHeader);
-    
-    if (this.settings.showProgress) {
-      const progressHeader = document.createElement('th');
-      progressHeader.textContent = 'Progress';
-      headerRow.appendChild(progressHeader);
-    }
-    
-    if (this.settings.showRatings) {
-      const scoreHeader = document.createElement('th');
-      scoreHeader.textContent = 'Rating';
-      headerRow.appendChild(scoreHeader);
-    }
+    headers.forEach(headerText => {
+      const th = document.createElement('th');
+      th.textContent = headerText;
+      headerRow.appendChild(th);
+    });
     
     thead.appendChild(headerRow);
     table.appendChild(thead);
     
-    // Create body
+    // Body
     const tbody = document.createElement('tbody');
     
     entries.forEach(entry => {
       const show = entry.show || entry.movie;
       if (!show) return;
       
-      const title = show.title;
-      
       const row = document.createElement('tr');
       
-      // Title cell with clickable link
+      // Title
       const titleCell = document.createElement('td');
       const titleLink = document.createElement('a');
       titleLink.href = this.getSimklUrl(config.mediaType, show.ids?.simkl);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'simkl-title-link';
-      titleLink.textContent = title;
+      titleLink.textContent = show.title;
       titleCell.appendChild(titleLink);
       row.appendChild(titleCell);
       
-      // Year cell
+      // Year
       const yearCell = document.createElement('td');
       yearCell.textContent = show.year || '-';
       row.appendChild(yearCell);
       
-      // Progress cell
+      // Progress
       if (this.settings.showProgress) {
         const progressCell = document.createElement('td');
         progressCell.textContent = entry.watched_episodes ? 
@@ -484,7 +600,7 @@ class SimklPlugin extends Plugin {
         row.appendChild(progressCell);
       }
       
-      // Rating cell
+    // Rating
       if (this.settings.showRatings) {
         const scoreCell = document.createElement('td');
         scoreCell.textContent = entry.user_rating ? `★ ${entry.user_rating}` : '-';
@@ -499,7 +615,10 @@ class SimklPlugin extends Plugin {
   }
 
   renderError(el, message) {
-    el.innerHTML = `<div class="simkl-error">Error: ${message}</div>`;
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'simkl-error';
+    errorDiv.textContent = `Error: ${message}`;
+    el.appendChild(errorDiv);
   }
 
   onunload() {
@@ -524,8 +643,11 @@ class SimklSettingTab extends PluginSettingTab {
     });
     
     containerEl.createEl('p', { 
-      text: 'Note: You need your Simkl User ID (not username). You can find this in your Simkl profile URL or API responses.'
+      text: 'Note: You need your Simkl User ID (not username). You can find this in your Simkl profile URL or by checking the network tab in your browser when viewing your profile.'
     });
+    
+    // API Settings
+    containerEl.createEl('h3', { text: 'API Configuration' });
     
     new Setting(containerEl)
       .setName('Client ID')
@@ -560,24 +682,8 @@ class SimklSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
     
-    containerEl.createEl('p', { 
-      text: 'Usage examples:'
-    });
-    
-    containerEl.createEl('pre', { 
-      text: `Code block format:
-\`\`\`simkl
-userId: YOUR_USER_ID
-mediaType: tv
-listType: watching
-layout: card
-\`\`\`
-
-Or use inline links:
-[My Stats](simkl:stats)
-[My Watching](simkl:YOUR_USER_ID/tv/watching)
-[My Anime](simkl:YOUR_USER_ID/anime/watching)`
-    });
+    // Display Settings
+    containerEl.createEl('h3', { text: 'Display Options' });
     
     new Setting(containerEl)
       .setName('Default Layout')
@@ -610,6 +716,7 @@ Or use inline links:
           this.plugin.settings.showRatings = value;
           await this.plugin.saveSettings();
         }));
+    
     new Setting(containerEl)
       .setName('Show Progress')
       .setDesc('Display progress information')
@@ -629,6 +736,102 @@ Or use inline links:
           this.plugin.settings.showGenres = value;
           await this.plugin.saveSettings();
         }));
+    
+    // Advanced Settings
+    containerEl.createEl('h3', { text: 'Advanced Settings' });
+    
+    new Setting(containerEl)
+      .setName('Debug Mode')
+      .setDesc('Enable debug logging and error notices')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.debugMode)
+        .onChange(async (value) => {
+          this.plugin.settings.debugMode = value;
+          await this.plugin.saveSettings();
+        }));
+    
+    new Setting(containerEl)
+      .setName('Request Timeout')
+      .setDesc('Request timeout in milliseconds (default: 15000)')
+      .addText(text => text
+        .setPlaceholder('15000')
+        .setValue(this.plugin.settings.requestTimeout.toString())
+        .onChange(async (value) => {
+          const timeout = parseInt(value);
+          if (!isNaN(timeout) && timeout > 0) {
+            this.plugin.settings.requestTimeout = timeout;
+            await this.plugin.saveSettings();
+          }
+        }));
+    
+    new Setting(containerEl)
+      .setName('Max Retries')
+      .setDesc('Maximum number of retry attempts for failed requests')
+      .addSlider(slider => slider
+        .setLimits(1, 5, 1)
+        .setValue(this.plugin.settings.maxRetries)
+        .setDynamicTooltip()
+        .onChange(async (value) => {
+          this.plugin.settings.maxRetries = value;
+          await this.plugin.saveSettings();
+        }));
+    
+    // Usage Examples
+    containerEl.createEl('h3', { text: 'Usage Examples' });
+    
+    const exampleDiv = containerEl.createEl('div');
+    exampleDiv.createEl('p', { text: 'Code block format:' });
+    exampleDiv.createEl('pre', { 
+      text: `\`\`\`simkl
+userId: YOUR_USER_ID
+mediaType: tv
+listType: watching
+layout: card
+\`\`\``
+    });
+    
+    exampleDiv.createEl('p', { text: 'Inline links:' });
+    exampleDiv.createEl('pre', { 
+      text: `[My Stats](simkl:stats)
+[My Watching](simkl:YOUR_USER_ID/tv/watching)
+[My Anime](simkl:YOUR_USER_ID/anime/watching)`
+    });
+    
+    // Test Connection Button
+    new Setting(containerEl)
+      .setName('Test Connection')
+      .setDesc('Test your API configuration')
+      .addButton(button => button
+        .setButtonText('Test API')
+        .onClick(async () => {
+          button.setButtonText('Testing...');
+          try {
+            await this.testConnection();
+            new Notice('Connection successful!');
+            button.setButtonText('Test API');
+          } catch (error) {
+            new Notice(`Connection failed: ${error.message}`);
+            button.setButtonText('Test API');
+          }
+        }));
+  }
+
+  async testConnection() {
+    if (!this.plugin.settings.clientId) {
+      throw new Error('Client ID not configured');
+    }
+    
+    if (!this.plugin.settings.userId) {
+      throw new Error('User ID not configured');
+    }
+    
+    // Test with stats endpoint as it's usually public
+    const config = {
+      type: 'stats',
+      userId: this.plugin.settings.userId
+    };
+    
+    await this.plugin.makeSimklRequest(config);
   }
 }
 
