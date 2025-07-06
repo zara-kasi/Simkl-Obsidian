@@ -30,7 +30,8 @@ class SimklPlugin extends Plugin {
       showRatings: true,
       showProgress: true,
       showGenres: true,
-      clientId: '' // Users need to set this
+      clientId: '', // Users need to set this
+      accessToken: '' // For authenticated requests
     }, await this.loadData());
   }
 
@@ -125,35 +126,61 @@ class SimklPlugin extends Plugin {
       return cached.data;
     }
     
+    if (!this.settings.clientId) {
+      throw new Error('Client ID not configured. Please set it in plugin settings.');
+    }
+    
     let url;
     const headers = {
       'simkl-api-version': '1',
-      'Authorization': `Bearer ${this.settings.clientId}`
+      'Content-Type': 'application/json'
     };
     
     if (config.type === 'stats') {
-      url = `https://api.simkl.com/users/${config.username}/stats`;
+      // User stats endpoint - public endpoint
+      url = `https://api.simkl.com/users/${config.username}/stats?client_id=${this.settings.clientId}`;
     } else {
-      url = `https://api.simkl.com/sync/all-items/${config.mediaType}/${config.listType}`;
+      // User's watchlist endpoint - requires authentication
+      if (!this.settings.accessToken) {
+        throw new Error('Access token required for user watchlist. Please authenticate with Simkl first.');
+      }
+      
+      headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
+      url = `https://api.simkl.com/sync/all-items/${config.mediaType}/${config.listType}?extended=full`;
     }
     
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: headers
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Simkl API Error: ${response.status}`);
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: headers
+      });
+      
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}`;
+        try {
+          const errorText = await response.text();
+          errorMessage += ` - ${errorText}`;
+        } catch (e) {
+          // If we can't read the error text, just use the status
+        }
+        throw new Error(`Simkl API Error: ${errorMessage}`);
+      }
+      
+      const result = await response.json();
+      
+      this.cache.set(cacheKey, {
+        data: result,
+        timestamp: Date.now()
+      });
+      
+      return result;
+    } catch (error) {
+      console.error('Simkl API Error:', error);
+      if (error.message.includes('Failed to fetch')) {
+        throw new Error('Network error: Please check your internet connection');
+      }
+      throw new Error(`Failed to fetch data from Simkl: ${error.message}`);
     }
-    
-    const result = await response.json();
-    
-    this.cache.set(cacheKey, {
-      data: result,
-      timestamp: Date.now()
-    });
-    
-    return result;
   }
 
   // Helper function to generate Simkl URL
@@ -228,6 +255,11 @@ class SimklPlugin extends Plugin {
   }
 
   renderMediaList(el, entries, config) {
+    if (!entries || entries.length === 0) {
+      el.innerHTML = '<div class="simkl-empty">No items found</div>';
+      return;
+    }
+    
     if (config.layout === 'table') {
       this.renderTableLayout(el, entries, config);
     } else {
@@ -241,6 +273,8 @@ class SimklPlugin extends Plugin {
     
     entries.forEach(entry => {
       const show = entry.show;
+      if (!show) return;
+      
       const title = show.title;
       
       const cardDiv = document.createElement('div');
@@ -260,7 +294,7 @@ class SimklPlugin extends Plugin {
       // Create clickable title
       const titleElement = document.createElement('h4');
       const titleLink = document.createElement('a');
-      titleLink.href = this.getSimklUrl(config.mediaType, show.ids.simkl);
+      titleLink.href = this.getSimklUrl(config.mediaType, show.ids?.simkl);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'simkl-title-link';
@@ -351,6 +385,8 @@ class SimklPlugin extends Plugin {
     
     entries.forEach(entry => {
       const show = entry.show;
+      if (!show) return;
+      
       const title = show.title;
       
       const row = document.createElement('tr');
@@ -358,7 +394,7 @@ class SimklPlugin extends Plugin {
       // Title cell with clickable link
       const titleCell = document.createElement('td');
       const titleLink = document.createElement('a');
-      titleLink.href = this.getSimklUrl(config.mediaType, show.ids.simkl);
+      titleLink.href = this.getSimklUrl(config.mediaType, show.ids?.simkl);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'simkl-title-link';
@@ -418,6 +454,10 @@ class SimklSettingTab extends PluginSettingTab {
       text: 'To use this plugin, you need to get a Client ID from Simkl. Go to https://simkl.com/settings/developer and create a new app to get your Client ID.'
     });
     
+    containerEl.createEl('p', { 
+      text: 'Note: For user watchlists, you also need an access token. User stats work with just the Client ID.'
+    });
+    
     new Setting(containerEl)
       .setName('Client ID')
       .setDesc('Your Simkl API Client ID (required)')
@@ -426,6 +466,17 @@ class SimklSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.clientId)
         .onChange(async (value) => {
           this.plugin.settings.clientId = value;
+          await this.plugin.saveSettings();
+        }));
+    
+    new Setting(containerEl)
+      .setName('Access Token')
+      .setDesc('Your Simkl access token (required for watchlists, optional for stats)')
+      .addText(text => text
+        .setPlaceholder('Enter your Simkl access token')
+        .setValue(this.plugin.settings.accessToken)
+        .onChange(async (value) => {
+          this.plugin.settings.accessToken = value;
           await this.plugin.saveSettings();
         }));
     
