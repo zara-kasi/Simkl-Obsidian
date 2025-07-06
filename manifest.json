@@ -1,0 +1,10 @@
+{
+  "id": "simkl-integration",
+  "name": "Simkl Integration",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Integrate Simkl watchlists and statistics into your Obsidian notes",
+  "author": "zara-kasi",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
