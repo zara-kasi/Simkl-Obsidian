@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice } = require('obsidian');
+const { Plugin, PluginSettingTab, Setting, Notice, Modal } = require('obsidian');
 
 class SimklPlugin extends Plugin {
   constructor() {
@@ -230,6 +230,18 @@ async pollForToken(userCode) {
     
     // Load settings first
     await this.loadSettings();
+    // Add this in your onload() method after loading settings
+this.addCommand({
+  id: 'authenticate-simkl',
+  name: 'Authenticate with Simkl',
+  callback: () => {
+    if (!this.settings.clientId) {
+      new Notice('Please configure your Client ID in settings first');
+      return;
+    }
+    this.authenticateWithPin();
+  }
+});
     
     // Register code block processor
     this.registerMarkdownCodeBlockProcessor('simkl', this.processSimklCodeBlock.bind(this));
