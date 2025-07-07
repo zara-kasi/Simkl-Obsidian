@@ -740,22 +740,30 @@ if (this.settings.accessToken) {
     
     return section;
   }
-
-  renderMediaList(el, entries, config) {
-    if (!entries || entries.length === 0) {
-      const emptyDiv = document.createElement('div');
-      emptyDiv.className = 'simkl-empty';
-      emptyDiv.textContent = 'No items found';
-      el.appendChild(emptyDiv);
-      return;
-    }
-    
-    if (config.layout === 'table') {
-      this.renderTableLayout(el, entries, config);
-    } else {
-      this.renderCardLayout(el, entries, config);
-    }
+renderMediaList(el, entries, config) {
+  // Add debugging - INSERT THIS NEW CODE
+  if (this.settings.debugMode) {
+    console.log('Rendering entries:', entries);
+    console.log('Config:', config);
+    console.log('Entries length:', entries?.length);
   }
+  
+  // Keep the existing code below unchanged
+  if (!entries || entries.length === 0) {
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'simkl-empty';
+    emptyDiv.textContent = 'No items found';
+    el.appendChild(emptyDiv);
+    return;
+  }
+  
+  if (config.layout === 'table') {
+    this.renderTableLayout(el, entries, config);
+  } else {
+    this.renderCardLayout(el, entries, config);
+  }
+}
+
 
   renderCardLayout(el, entries, config) {
     const gridDiv = document.createElement('div');
