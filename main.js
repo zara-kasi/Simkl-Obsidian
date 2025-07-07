@@ -1,5 +1,4 @@
 import { Plugin, Notice, requestUrl, Setting, PluginSettingTab, App } from 'obsidian';
-import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { parse } from 'url';
 
 interface SimklAuthSettings {
