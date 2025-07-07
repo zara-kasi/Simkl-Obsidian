@@ -491,7 +491,7 @@ export default class SimklPlugin extends Plugin {
     }
 
     // Auto-sync functionality
-    private startAutoSync(): void {
+ startAutoSync(): void {
         if (this.syncIntervalId) {
             clearInterval(this.syncIntervalId);
         }
@@ -507,7 +507,7 @@ export default class SimklPlugin extends Plugin {
         }, this.settings.syncInterval);
     }
 
-    private stopAutoSync(): void {
+    stopAutoSync(): void {
         if (this.syncIntervalId) {
             clearInterval(this.syncIntervalId);
             this.syncIntervalId = null;
