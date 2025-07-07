@@ -508,13 +508,13 @@ filterSyncData(data, config) {
       url = `https://api.simkl.com/users/${config.userId}/stats`;
     } else {
       // Always try authenticated endpoint first if we have a token
-// Replace this section in makeSimklRequest:
+// In makeSimklRequest, replace the authenticated section:
 if (this.settings.accessToken) {
   headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
-  // Try the correct sync endpoint format
-  url = `https://api.simkl.com/sync/all-items/${config.mediaType}/${config.listType}?extended=full`;
+  // Use the general sync endpoint and filter client-side
+  url = `https://api.simkl.com/sync/all-items?extended=full`;
 } else {
-  // Public endpoint
+  // Public endpoint remains the same
   url = `https://api.simkl.com/users/${config.userId}/list/${config.mediaType}/${config.listType}?extended=full`;
 }
     }
