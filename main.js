@@ -934,17 +934,45 @@ class SimklSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
     
-    new Setting(containerEl)
-      .setName('Access Token')
-      .setDesc('Your Simkl access token (required for private watchlists)')
-      .addText(text => text
-        .setPlaceholder('Enter your Simkl access token')
-        .setValue(this.plugin.settings.accessToken)
-        .onChange(async (value) => {
-          this.plugin.settings.accessToken = value;
+    // Replace the existing Access Token setting with this:
+new Setting(containerEl)
+  .setName('Authentication')
+  .setDesc(this.plugin.settings.accessToken ? 
+    'You are authenticated with Simkl' : 
+    'Authenticate with Simkl to access your private lists')
+  .addButton(button => {
+    if (this.plugin.settings.accessToken) {
+      button
+        .setButtonText('Sign Out')
+        .setWarning()
+        .onClick(async () => {
+          this.plugin.settings.accessToken = '';
           await this.plugin.saveSettings();
-        }));
-    
+          this.plugin.cache.clear();
+          this.display(); // Refresh the settings page
+          new Notice('Signed out from Simkl');
+        });
+    } else {
+      button
+        .setButtonText('Sign In with Simkl')
+        .setCta()
+        .onClick(async () => {
+          if (!this.plugin.settings.clientId) {
+            new Notice('Please enter your Client ID first');
+            return;
+          }
+          
+          button.setButtonText('Authenticating...');
+          try {
+            await this.plugin.authenticateWithPin();
+            this.display(); // Refresh the settings page
+          } catch (error) {
+            new Notice(`Authentication failed: ${error.message}`);
+          }
+          button.setButtonText('Sign In with Simkl');
+        });
+    }
+  });
     // Display Settings
     containerEl.createEl('h3', { text: 'Display Options' });
     
