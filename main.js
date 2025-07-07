@@ -276,7 +276,7 @@ export default class SimklPlugin extends Plugin {
         }
     }
 
-    private isTokenValid(): boolean {
+   isTokenValid(): boolean {
         return this.settings.accessToken && 
                this.settings.tokenExpiry > Date.now();
     }
