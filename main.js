@@ -457,28 +457,44 @@ this.addCommand({
   }
 
   // Filter sync data by list type and media type
-  filterSyncData(data, config) {
-    if (!data || !Array.isArray(data)) return data;
-    
-    // Map list types to sync status values
-    const statusMap = {
-      'watching': 'watching',
-      'plantowatch': 'plantowatch',
-      'hold': 'hold',
-      'completed': 'completed',
-      'dropped': 'dropped'
-    };
-    
-    const targetStatus = statusMap[config.listType] || config.listType;
-    
-    // Filter data by status and media type
-    return data.filter(item => {
-      const matchesStatus = item.status === targetStatus;
-      const matchesType = config.mediaType === 'tv' ? item.show : item.movie;
-      return matchesStatus && matchesType;
-    });
+// Filter sync data by list type and media type
+filterSyncData(data, config) {
+  if (!data || !Array.isArray(data)) return data;
+  
+  // Debug logging
+  if (this.settings.debugMode) {
+    console.log('Raw sync data:', data);
+    console.log('Config:', config);
   }
-
+  
+  // Map list types to sync status values
+  const statusMap = {
+    'watching': 'watching',
+    'plantowatch': 'plantowatch', 
+    'hold': 'hold',
+    'completed': 'completed',
+    'dropped': 'dropped'
+  };
+  
+  const targetStatus = statusMap[config.listType] || config.listType;
+  
+  // Filter data by status and media type
+  return data.filter(item => {
+    // Check if item has the required structure
+    if (!item) return false;
+    
+    const matchesStatus = item.status === targetStatus;
+    const hasCorrectMediaType = config.mediaType === 'tv' ? 
+      (item.show || item.type === 'show') : 
+      (item.movie || item.type === 'movie');
+    
+    if (this.settings.debugMode) {
+      console.log(`Item: ${item.show?.title || item.movie?.title}, Status: ${item.status}, Type: ${item.type}, Matches: ${matchesStatus && hasCorrectMediaType}`);
+    }
+    
+    return matchesStatus && hasCorrectMediaType;
+  });
+}
   async makeSimklRequest(config) {
     let url;
     let headers = {
