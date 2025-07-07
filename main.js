@@ -430,15 +430,20 @@ this.addCommand({
     while (this.requestQueue.length > 0) {
       const { config, resolve, reject } = this.requestQueue.shift();
       
+
+      
+      // Add delay between requests to be respectful to the API
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    
+    this.isProcessingQueue = false;
+  }
 try {
   const data = await this.makeSimklRequest(config);
   
-  // COMMENT OUT the filtering (add // at the beginning of these lines)
-  // const filteredData = this.settings.accessToken && config.type !== 'stats' ? 
-  //   this.filterSyncData(data, config) : data;
-  
-  // ADD THIS NEW LINE instead:
-  const filteredData = data; // Use raw data temporarily
+  // Filter sync data for authenticated requests
+  const filteredData = this.settings.accessToken && config.type !== 'stats' ? 
+    this.filterSyncData(data, config) : data;
   
   const cacheKey = JSON.stringify(config);
   
@@ -451,16 +456,8 @@ try {
 } catch (error) {
   reject(error);
 }
-      
-      // Add delay between requests to be respectful to the API
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
-    
-    this.isProcessingQueue = false;
-  }
 
-  // Filter sync data by list type and media type
-// Filter sync data by list type and media type
+  
 filterSyncData(data, config) {
   if (!data || !Array.isArray(data)) return data;
   
