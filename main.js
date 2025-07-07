@@ -430,24 +430,27 @@ this.addCommand({
     while (this.requestQueue.length > 0) {
       const { config, resolve, reject } = this.requestQueue.shift();
       
-      try {
-        const data = await this.makeSimklRequest(config);
-        
-        // Filter sync data for authenticated requests
-        const filteredData = this.settings.accessToken && config.type !== 'stats' ? 
-          this.filterSyncData(data, config) : data;
-        
-        const cacheKey = JSON.stringify(config);
-        
-        this.cache.set(cacheKey, {
-          data: filteredData,
-          timestamp: Date.now()
-        });
-        
-        resolve(filteredData);
-      } catch (error) {
-        reject(error);
-      }
+try {
+  const data = await this.makeSimklRequest(config);
+  
+  // COMMENT OUT the filtering (add // at the beginning of these lines)
+  // const filteredData = this.settings.accessToken && config.type !== 'stats' ? 
+  //   this.filterSyncData(data, config) : data;
+  
+  // ADD THIS NEW LINE instead:
+  const filteredData = data; // Use raw data temporarily
+  
+  const cacheKey = JSON.stringify(config);
+  
+  this.cache.set(cacheKey, {
+    data: filteredData,
+    timestamp: Date.now()
+  });
+  
+  resolve(filteredData);
+} catch (error) {
+  reject(error);
+}
       
       // Add delay between requests to be respectful to the API
       await new Promise(resolve => setTimeout(resolve, 200));
