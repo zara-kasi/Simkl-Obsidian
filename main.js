@@ -477,10 +477,10 @@ this.addCommand({
   async makeSimklRequest(config) {
     let url;
     let headers = {
-      'simkl-api-key': this.settings.clientId,  // REQUIRED - was missing!
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    };
+  'simkl-api-key': this.settings.clientId,
+  'Content-Type': 'application/json',
+  'Accept': 'application/json'
+};
 
     if (config.type === 'stats') {
       // Stats endpoint
