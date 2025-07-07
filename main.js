@@ -134,13 +134,14 @@ const { Plugin, PluginSettingTab, Setting, Notice, Modal } = require('obsidian')
   }
   }
 class SimklPlugin extends Plugin {
-  constructor() {
-    super(...arguments);
-    this.cache = new Map();
-    this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
-    this.requestQueue = [];
-    this.isProcessingQueue = false;
-  }
+constructor(app, manifest) {
+  super(app, manifest);
+  this.cache = new Map();
+  this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
+  this.requestQueue = [];
+  this.isProcessingQueue = false;
+}
+  
   async authenticateWithPin() {
   try {
     // Step 1: Get PIN from Simkl
