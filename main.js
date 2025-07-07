@@ -1,96 +1,5 @@
 const { Plugin, PluginSettingTab, Setting, Notice, Modal } = require('obsidian');
 
-class SimklPlugin extends Plugin {
-  constructor() {
-    super(...arguments);
-    this.cache = new Map();
-    this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
-    this.requestQueue = [];
-    this.isProcessingQueue = false;
-  }
-  async authenticateWithPin() {
-  try {
-    // Step 1: Get PIN from Simkl
-    const pinData = await this.requestPin();
-    
-    // Step 2: Show PIN to user
-    const modal = new PinAuthModal(this.app, pinData, async (success) => {
-      if (success) {
-        // Step 3: Poll for token
-        const token = await this.pollForToken(pinData.user_code);
-        
-        // Step 4: Save token
-        this.settings.accessToken = token.access_token;
-        await this.saveSettings();
-        
-        new Notice('Successfully authenticated with Simkl!');
-        
-        // Clear cache to force refresh with new token
-        this.cache.clear();
-      }
-    });
-    
-    modal.open();
-    
-  } catch (error) {
-    console.error('Authentication error:', error);
-    new Notice(`Authentication failed: ${error.message}`);
-  }
-}
-
-async requestPin() {
-  const response = await fetch(`https://api.simkl.com/oauth/pin?client_id=${this.settings.clientId}`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to request PIN: ${response.status}`);
-  }
-  
-  return await response.json();
-}
-
-async pollForToken(userCode) {
-  const pollInterval = 5000; // 5 seconds
-  const maxAttempts = 60; // 5 minutes total
-  
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      const response = await fetch(
-        `https://api.simkl.com/oauth/pin/${userCode}?client_id=${this.settings.clientId}`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.access_token) {
-          return data;
-        }
-      } else if (response.status === 400) {
-        // Still waiting for user authorization
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-        continue;
-      } else {
-        throw new Error(`Polling failed: ${response.status}`);
-      }
-    } catch (error) {
-      if (attempt === maxAttempts - 1) {
-        throw new Error('Authentication timed out. Please try again.');
-      }
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
-    }
-  }
-  
-  throw new Error('Authentication timed out. Please try again.');
-} 
   class PinAuthModal extends Modal {
   constructor(app, pinData, onComplete) {
     super(app);
@@ -223,7 +132,99 @@ async pollForToken(userCode) {
       this.onComplete(false);
     }
   }
+  }
+class SimklPlugin extends Plugin {
+  constructor() {
+    super(...arguments);
+    this.cache = new Map();
+    this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
+    this.requestQueue = [];
+    this.isProcessingQueue = false;
+  }
+  async authenticateWithPin() {
+  try {
+    // Step 1: Get PIN from Simkl
+    const pinData = await this.requestPin();
+    
+    // Step 2: Show PIN to user
+    const modal = new PinAuthModal(this.app, pinData, async (success) => {
+      if (success) {
+        // Step 3: Poll for token
+        const token = await this.pollForToken(pinData.user_code);
+        
+        // Step 4: Save token
+        this.settings.accessToken = token.access_token;
+        await this.saveSettings();
+        
+        new Notice('Successfully authenticated with Simkl!');
+        
+        // Clear cache to force refresh with new token
+        this.cache.clear();
+      }
+    });
+    
+    modal.open();
+    
+  } catch (error) {
+    console.error('Authentication error:', error);
+    new Notice(`Authentication failed: ${error.message}`);
+  }
 }
+
+async requestPin() {
+  const response = await fetch(`https://api.simkl.com/oauth/pin?client_id=${this.settings.clientId}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to request PIN: ${response.status}`);
+  }
+  
+  return await response.json();
+}
+
+async pollForToken(userCode) {
+  const pollInterval = 5000; // 5 seconds
+  const maxAttempts = 60; // 5 minutes total
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const response = await fetch(
+        `https://api.simkl.com/oauth/pin/${userCode}?client_id=${this.settings.clientId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.access_token) {
+          return data;
+        }
+      } else if (response.status === 400) {
+        // Still waiting for user authorization
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        continue;
+      } else {
+        throw new Error(`Polling failed: ${response.status}`);
+      }
+    } catch (error) {
+      if (attempt === maxAttempts - 1) {
+        throw new Error('Authentication timed out. Please try again.');
+      }
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+  }
+  
+  throw new Error('Authentication timed out. Please try again.');
+} 
+
 
   async onload() {
     console.log('Loading Simkl Plugin');
