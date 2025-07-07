@@ -46,16 +46,20 @@ const { Plugin, PluginSettingTab, Setting, Notice, Modal } = require('obsidian')
       text: 'Open Simkl',
       cls: 'mod-cta'
     });
-    openUrlButton.onclick = () => {
-      // Open URL in system browser
-      if (this.app.vault.adapter.process) {
-        // Desktop
-        require('electron').shell.openExternal(this.pinData.verification_url);
-      } else {
-        // Mobile - use window.open
-        window.open(this.pinData.verification_url, '_blank');
-      }
-    };
+openUrlButton.onclick = () => {
+  try {
+    // Try electron first
+    if (window.require) {
+      window.require('electron').shell.openExternal(this.pinData.verification_url);
+    } else {
+      // Fallback to window.open
+      window.open(this.pinData.verification_url, '_blank');
+    }
+  } catch (error) {
+    console.error('Failed to open URL:', error);
+    new Notice('Please manually navigate to: ' + this.pinData.verification_url);
+  }
+};
     
     const copyPinButton = buttonContainer.createEl('button', { text: 'Copy PIN' });
     copyPinButton.onclick = () => {
