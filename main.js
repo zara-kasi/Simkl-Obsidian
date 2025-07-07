@@ -8,6 +8,222 @@ class SimklPlugin extends Plugin {
     this.requestQueue = [];
     this.isProcessingQueue = false;
   }
+  async authenticateWithPin() {
+  try {
+    // Step 1: Get PIN from Simkl
+    const pinData = await this.requestPin();
+    
+    // Step 2: Show PIN to user
+    const modal = new PinAuthModal(this.app, pinData, async (success) => {
+      if (success) {
+        // Step 3: Poll for token
+        const token = await this.pollForToken(pinData.user_code);
+        
+        // Step 4: Save token
+        this.settings.accessToken = token.access_token;
+        await this.saveSettings();
+        
+        new Notice('Successfully authenticated with Simkl!');
+        
+        // Clear cache to force refresh with new token
+        this.cache.clear();
+      }
+    });
+    
+    modal.open();
+    
+  } catch (error) {
+    console.error('Authentication error:', error);
+    new Notice(`Authentication failed: ${error.message}`);
+  }
+}
+
+async requestPin() {
+  const response = await fetch(`https://api.simkl.com/oauth/pin?client_id=${this.settings.clientId}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to request PIN: ${response.status}`);
+  }
+  
+  return await response.json();
+}
+
+async pollForToken(userCode) {
+  const pollInterval = 5000; // 5 seconds
+  const maxAttempts = 60; // 5 minutes total
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const response = await fetch(
+        `https://api.simkl.com/oauth/pin/${userCode}?client_id=${this.settings.clientId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.access_token) {
+          return data;
+        }
+      } else if (response.status === 400) {
+        // Still waiting for user authorization
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        continue;
+      } else {
+        throw new Error(`Polling failed: ${response.status}`);
+      }
+    } catch (error) {
+      if (attempt === maxAttempts - 1) {
+        throw new Error('Authentication timed out. Please try again.');
+      }
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+  }
+  
+  throw new Error('Authentication timed out. Please try again.');
+} 
+  class PinAuthModal extends Modal {
+  constructor(app, pinData, onComplete) {
+    super(app);
+    this.pinData = pinData;
+    this.onComplete = onComplete;
+    this.isPolling = false;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    
+    // Title
+    contentEl.createEl('h2', { text: 'Authenticate with Simkl' });
+    
+    // Instructions
+    const instructionsEl = contentEl.createEl('div', { cls: 'simkl-auth-instructions' });
+    instructionsEl.createEl('p', { 
+      text: 'To authenticate with Simkl, please follow these steps:' 
+    });
+    
+    const stepsList = instructionsEl.createEl('ol');
+    stepsList.createEl('li', { text: 'Copy the PIN code below' });
+    stepsList.createEl('li', { text: 'Click "Open Simkl" to visit the authentication page' });
+    stepsList.createEl('li', { text: 'Enter the PIN code on the Simkl website' });
+    stepsList.createEl('li', { text: 'Return to Obsidian - authentication will complete automatically' });
+    
+    // PIN display
+    const pinContainer = contentEl.createEl('div', { cls: 'simkl-pin-container' });
+    pinContainer.style.cssText = 'text-align: center; margin: 20px 0; padding: 20px; background: var(--background-secondary); border-radius: 8px;';
+    
+    pinContainer.createEl('p', { text: 'Your PIN code:' });
+    const pinEl = pinContainer.createEl('div', { 
+      text: this.pinData.user_code,
+      cls: 'simkl-pin-code'
+    });
+    pinEl.style.cssText = 'font-size: 24px; font-weight: bold; letter-spacing: 2px; margin: 10px 0;';
+    
+    // Buttons
+    const buttonContainer = contentEl.createEl('div', { cls: 'simkl-auth-buttons' });
+    buttonContainer.style.cssText = 'display: flex; gap: 10px; justify-content: center; margin-top: 20px;';
+    
+    const openUrlButton = buttonContainer.createEl('button', { 
+      text: 'Open Simkl',
+      cls: 'mod-cta'
+    });
+    openUrlButton.onclick = () => {
+      // Open URL in system browser
+      if (this.app.vault.adapter.process) {
+        // Desktop
+        require('electron').shell.openExternal(this.pinData.verification_url);
+      } else {
+        // Mobile - use window.open
+        window.open(this.pinData.verification_url, '_blank');
+      }
+    };
+    
+    const copyPinButton = buttonContainer.createEl('button', { text: 'Copy PIN' });
+    copyPinButton.onclick = () => {
+      navigator.clipboard.writeText(this.pinData.user_code);
+      copyPinButton.textContent = 'Copied!';
+      setTimeout(() => {
+        copyPinButton.textContent = 'Copy PIN';
+      }, 2000);
+    };
+    
+    const cancelButton = buttonContainer.createEl('button', { text: 'Cancel' });
+    cancelButton.onclick = () => {
+      this.close();
+    };
+    
+    // Status indicator
+    this.statusEl = contentEl.createEl('div', { cls: 'simkl-auth-status' });
+    this.statusEl.style.cssText = 'text-align: center; margin-top: 15px; font-style: italic;';
+    this.statusEl.textContent = 'Waiting for authentication...';
+    
+    // Start polling
+    this.startPolling();
+  }
+
+  startPolling() {
+    if (this.isPolling) return;
+    
+    this.isPolling = true;
+    this.pollForCompletion();
+  }
+
+  async pollForCompletion() {
+    try {
+      const response = await fetch(
+        `https://api.simkl.com/oauth/pin/${this.pinData.user_code}?client_id=${this.app.plugins.plugins['simkl-integration'].settings.clientId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.access_token) {
+          this.statusEl.textContent = 'Authentication successful!';
+          this.statusEl.style.color = 'var(--text-success)';
+          
+          // Save token and close
+          setTimeout(() => {
+            this.close();
+            this.onComplete(true, data);
+          }, 1000);
+          return;
+        }
+      }
+      
+      // Continue polling if still waiting
+      if (this.isPolling) {
+        setTimeout(() => this.pollForCompletion(), 3000);
+      }
+    } catch (error) {
+      console.error('Polling error:', error);
+      if (this.isPolling) {
+        setTimeout(() => this.pollForCompletion(), 5000);
+      }
+    }
+  }
+
+  onClose() {
+    this.isPolling = false;
+    if (this.onComplete) {
+      this.onComplete(false);
+    }
+  }
+}
 
   async onload() {
     console.log('Loading Simkl Plugin');
