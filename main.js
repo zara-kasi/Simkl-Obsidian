@@ -236,12 +236,12 @@ async pollForToken(userCode) {
 this.addCommand({
   id: 'authenticate-simkl',
   name: 'Authenticate with Simkl',
-  callback: () => {
+  callback: async () => {
     if (!this.settings.clientId) {
       new Notice('Please configure your Client ID in settings first');
       return;
     }
-    this.authenticateWithPin();
+    await this.authenticateWithPin();
   }
 });
     
