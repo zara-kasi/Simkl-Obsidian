@@ -1,246 +1,398 @@
-/* Simkl Plugin Styles */
+/* SIMKL Authentication Plugin Styles */
 
-.simkl-container {
-  margin: 1em 0;
-  padding: 1em;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
-  background-color: var(--background-primary);
+.simkl-auth-status {
+    margin: 16px 0;
+    padding: 12px;
+    background: var(--background-secondary);
+    border-radius: 4px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.simkl-pin-container {
+    margin: 20px 0;
+}
+
+.simkl-instructions {
+    margin-bottom: 20px;
+}
+
+.simkl-pin-display {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0;
+    padding: 16px;
+    background: var(--background-primary);
+    border: 2px solid var(--interactive-accent);
+    border-radius: 8px;
+}
+
+.simkl-pin-code {
+    font-family: var(--font-monospace);
+    font-size: 24px;
+    font-weight: bold;
+    color: var(--interactive-accent);
+    background: transparent;
+    border: none;
+    padding: 0;
+    letter-spacing: 2px;
+    flex: 1;
+}
+
+.simkl-url-container {
+    margin: 16px 0;
+    text-align: center;
+}
+
+.simkl-waiting-text {
+    color: var(--text-muted);
+    font-style: italic;
+    text-align: center;
+    margin: 16px 0;
+}
+
+.simkl-code-input-section {
+    margin-top: 24px;
+    padding: 20px;
+    background: var(--background-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.simkl-input-container {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.simkl-code-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-monospace);
+}
+
+.simkl-code-input:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+}
+
+.simkl-button-container {
+    margin-top: 20px;
+    text-align: center;
+}
+
+.simkl-platform-info {
+    margin: 16px 0;
+    padding: 12px;
+    background: var(--background-secondary);
+    border-radius: 6px;
+    border-left: 4px solid var(--interactive-accent);
+}
+
+.simkl-platform-text {
+    margin: 0 0 8px 0;
+    font-weight: 500;
+    color: var(--text-normal);
+}
+
+.simkl-mobile-note {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+
+/* Mobile-specific improvements */
+@media (max-width: 768px) {
+    .simkl-pin-display {
+        flex-direction: column;
+        text-align: center;
+        gap: 16px;
+    }
+    
+    .simkl-pin-code {
+        font-size: 28px;
+        text-align: center;
+    }
+    
+    .simkl-input-container {
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .simkl-code-input {
+        padding: 12px;
+        font-size: 16px;
+        text-align: center;
+    }
+    
+    .simkl-url-container button {
+        width: 100%;
+        padding: 12px;
+        font-size: 16px;
+    }
+    
+    .simkl-button-container button {
+        padding: 10px 20px;
+        font-size: 14px;
+    }
+}
+
+/* Dark mode adjustments */
+.theme-dark .simkl-pin-display {
+    background: var(--background-primary-alt);
+}
+
+.theme-dark .simkl-code-input-section {
+    background: var(--background-primary-alt);
+}
+
+/* High contrast for better visibility */
+.simkl-pin-code {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Animation for status updates */
+.simkl-auth-status {
+    transition: all 0.3s ease;
+}
+
+/* Improved button styling */
+.simkl-pin-display button,
+.simkl-url-container button {
+    white-space: nowrap;
+    min-width: fit-content;
+}
+
+/* Focus styles for accessibility */
+.simkl-code-input:focus,
+button:focus {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+}
+
+/* Loading state styling */
+.simkl-auth-status.loading {
+    background: var(--background-modifier-success);
+    color: var(--text-on-accent);
+}
+
+.simkl-auth-status.error {
+    background: var(--background-modifier-error);
+    color: var(--text-on-accent);
+}
+
+/* Responsive text sizing */
+@media (max-width: 480px) {
+    .simkl-pin-code {
+        font-size: 32px;
+        letter-spacing: 3px;
+    }
+    
+    .simkl-auth-status {
+        font-size: 14px;
+        padding: 16px;
+    }
+    
+    .simkl-instructions p {
+        font-size: 14px;
+        line-height: 1.4;
+    }
+}
+
+/* Ensure buttons are touch-friendly on mobile */
+@media (max-width: 768px) {
+    button {
+        min-height: 44px;
+        min-width: 44px;
+        touch-action: manipulation;
+    }
+}
+
+/* Smooth transitions */
+.simkl-pin-container,
+.simkl-code-input-section {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+/* Success state styling */
+.simkl-success {
+    background: var(--background-modifier-success);
+    color: var(--text-on-accent);
+    border-color: var(--background-modifier-success);
+}
+
+/* Debug info styling */
+.simkl-debug-info {
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--background-secondary);
+    padding: 8px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    font-family: var(--font-monospace);
+}
+
+/* Mobile instructions styling */
+.simkl-mobile-instructions {
+    margin: 16px 0;
+    padding: 16px;
+    background: var(--background-secondary);
+    border-radius: 8px;
+    border-left: 4px solid var(--interactive-accent);
+}
+
+.simkl-step-header {
+    margin: 8px 0;
+    color: var(--interactive-accent);
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.simkl-step {
+    margin: 8px 0;
+    color: var(--text-normal);
+    font-size: 14px;
+}
+
+.simkl-step-highlight {
+    margin: 8px 0;
+    color: var(--interactive-accent);
+    font-weight: 500;
+    font-size: 14px;
+}
+
+/* URL backup section */
+.simkl-url-backup {
+    margin-top: 16px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 12px;
+}
+
+.simkl-url-backup summary {
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.simkl-manual-url {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.simkl-url-input {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-monospace);
+    font-size: 12px;
+}
+
+/* Manual URL section for emergencies */
+.simkl-manual-section {
+    margin-top: 20px;
+    padding: 16px;
+    background: var(--background-modifier-error-hover);
+    border: 2px solid var(--background-modifier-error);
+    border-radius: 8px;
+}
+
+.simkl-manual-section h3 {
+    margin: 0 0 12px 0;
+    color: var(--text-error);
+}
+
+.simkl-manual-url-container {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.simkl-manual-url-input {
+    flex: 1;
+    padding: 12px;
+    border: 2px solid var(--interactive-accent);
+    border-radius: 6px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-monospace);
+    font-size: 12px;
+    word-break: break-all;
+}
+
+.simkl-manual-url-input:focus {
+    outline: none;
+    border-color: var(--interactive-accent-hover);
+    background: var(--background-primary-alt);
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+    .simkl-manual-url,
+    .simkl-manual-url-container {
+        flex-direction: column;
+    }
+    
+    .simkl-url-input,
+    .simkl-manual-url-input {
+        text-align: center;
+        font-size: 11px;
+        padding: 10px;
+    }
+    
+    .simkl-manual-section {
+        padding: 12px;
+    }
+    
+    .simkl-step-header {
+        font-size: 16px;
+    }
+}
+
+/* Status styling */
+.simkl-success {
+    background: var(--background-modifier-success) !important;
+    color: var(--text-on-accent) !important;
 }
 
 .simkl-error {
-  color: var(--text-error);
-  background-color: var(--background-modifier-error);
-  padding: 1em;
-  border-radius: 4px;
-  border: 1px solid var(--text-error);
+    background: var(--background-modifier-error) !important;
+    color: var(--text-on-accent) !important;
 }
 
-/* User Stats */
-.simkl-user-stats {
-  text-align: center;
+/* Debug details styling */
+.simkl-platform-info details {
+    margin-top: 12px;
 }
 
-.simkl-user-stats .user-header {
-  margin-bottom: 1.5em;
+.simkl-platform-info details summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-muted);
 }
 
-.simkl-user-stats .user-header h3 {
-  margin: 0.5em 0;
-  color: var(--text-normal);
+.simkl-platform-info details div {
+    margin-top: 8px;
+    padding: 8px;
+    font-size: 11px;
+    font-family: var(--font-monospace);
+    background: var(--background-primary);
+    border-radius: 4px;
 }
 
-.simkl-user-stats .stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5em;
-  margin-top: 1em;
+.simkl-platform-info details div p {
+    margin: 4px 0;
+    color: var(--text-muted);
 }
-
-.simkl-user-stats .stat-section {
-  background-color: var(--background-secondary);
-  padding: 1em;
-  border-radius: 8px;
-  border: 1px solid var(--background-modifier-border);
-}
-
-.simkl-user-stats .stat-section h4 {
-  margin: 0 0 0.5em 0;
-  color: var(--text-accent);
-  text-align: center;
-}
-
-.simkl-user-stats .stat-item {
-  display: flex;
-  justify-content: space-between;
-  margin: 0.5em 0;
-  padding: 0.25em 0;
-  border-bottom: 1px solid var(--background-modifier-border);
-}
-
-.simkl-user-stats .stat-item:last-child {
-  border-bottom: none;
-}
-
-/* Card Layout */
-.simkl-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1em;
-  margin-top: 1em;
-}
-
-.simkl-card {
-  display: flex;
-  background-color: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
-  overflow: hidden;
-  transition: box-shadow 0.2s ease;
-}
-
-.simkl-card:hover {
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-}
-
-.simkl-card .media-cover {
-  width: 80px;
-  height: 120px;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.simkl-card .media-info {
-  padding: 1em;
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.simkl-card .media-info h4 {
-  margin: 0 0 0.5em 0;
-  font-size: 1.1em;
-  line-height: 1.3;
-}
-
-.simkl-card .media-details {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5em;
-  margin-bottom: 0.5em;
-}
-
-.simkl-card .media-details span {
-  font-size: 0.9em;
-  padding: 0.2em 0.5em;
-  background-color: var(--background-modifier-border);
-  border-radius: 4px;
-}
-
-.simkl-card .year {
-  background-color: var(--interactive-accent);
-  color: var(--text-on-accent);
-}
-
-.simkl-card .progress {
-  background-color: var(--text-accent);
-  color: var(--text-on-accent);
-}
-
-.simkl-card .score {
-  background-color: var(--color-orange);
-  color: var(--text-on-accent);
-}
-
-.simkl-card .genres {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3em;
-  margin-top: auto;
-}
-
-.simkl-card .genre-tag {
-  font-size: 0.8em;
-  padding: 0.2em 0.4em;
-  background-color: var(--background-modifier-border);
-  border-radius: 12px;
-  color: var(--text-muted);
-}
-
-/* Single Card Layout */
-.simkl-single-card {
-  display: flex;
-  background-color: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
-  overflow: hidden;
-  max-width: 500px;
-}
-
-.simkl-single-card .media-cover {
-  width: 120px;
-  height: 180px;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.simkl-single-card .media-info {
-  padding: 1.5em;
-  flex-grow: 1;
-}
-
-.simkl-single-card .media-info h3 {
-  margin: 0 0 1em 0;
-  font-size: 1.3em;
-}
-
-/* Table Layout */
-.simkl-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 1em;
-}
-
-.simkl-table th {
-  background-color: var(--background-secondary);
-  padding: 0.75em;
-  text-align: left;
-  border-bottom: 2px solid var(--background-modifier-border);
-  font-weight: 600;
-}
-
-.simkl-table td {
-  padding: 0.75em;
-  border-bottom: 1px solid var(--background-modifier-border);
-}
-
-.simkl-table tr:hover {
-  background-color: var(--background-modifier-hover);
-}
-
-/* Links */
-.simkl-title-link {
-  color: var(--text-normal);
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.simkl-title-link:hover {
-  color: var(--text-accent);
-  text-decoration: underline;
-}
-
-/* Inline Container */
-.simkl-inline-container {
-  display: inline-block;
-  margin: 0.5em 0;
-}
-
-/* Responsive Design */
-@media (max-width: 600px) {
-  .simkl-cards-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .simkl-card {
-    flex-direction: column;
-  }
-  
-  .simkl-card .media-cover {
-    width: 100%;
-    height: 200px;
-  }
-  
-  .simkl-user-stats .stats-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .simkl-table {
-    font-size: 0.9em;
-  }
-  
-  .simkl-table th,
-  .simkl-table td {
-    padding: 0.5em;
-  }
-  }
