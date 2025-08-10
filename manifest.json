@@ -1,10 +1,11 @@
 {
-  "id": "simkl-integration",
-  "name": "Simkl Integration",
-  "version": "1.0.0",
-  "minAppVersion": "0.15.0",
-  "description": "Integrate Simkl watchlists and statistics into your Obsidian notes",
-  "author": "zara-kasi",
-  "authorUrl": "",
-  "isDesktopOnly": false
+    "id": "simkl-auth",
+    "name": "SIMKL Authentication Demo",
+    "version": "1.0.0",
+    "minAppVersion": "0.15.0",
+    "description": "Demo plugin for SIMKL API authentication using pin-based flow",
+    "author": "Your Name",
+    "authorUrl": "https://github.com/yourusername",
+    "fundingUrl": "",
+    "isDesktopOnly": false
 }
